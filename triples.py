@@ -1,7 +1,7 @@
 
-import os
 import csv
 from pathlib import Path
+import pandas as pd
 
 class Data:
 
@@ -12,34 +12,33 @@ class Data:
         self.relation_dict = dict()
         self.training_triples = []
         self.validation_triples = []
-
-        self.load_entity_dict()
-        self.load_relation_dict()
-
-    def load_entity_dict(self):
-        entity_file_name = "entity2id.txt"
-        # adjust accordingly: "/Users/rlafraie/PycharmProjects/TransE/data/entity2id.txt"
-        entity_file = open(self.data_dir / entity_file_name)
-        entity_reader = csv.reader(entity_file, delimiter="\t")
-        self.entity_dict = {entity[0]: entity[1] for entity in entity_reader}
-
-    def load_relation_dict(self):
-        relation_file_name = "relation2id.txt"
-        # adjust accordingly:"/Users/rlafraie/PycharmProjects/TransE/data/relation2id.txt"
-        relation_file = open(self.data_dir / relation_file_name)
-        relation_reader = csv.reader(relation_file, delimiter="\t")
-        self.relation_dict = {relation[0]: relation[1] for relation in relation_reader}
-
-    def load_triples(self):
-        training_file_name = "train.txt"
-        validation_file_name = "validation.txt"
-
-        with open(self.data_dir / training_file_name) as train_f:
-            for r in csv.reader(train_f, delimiter='\t'):
-                self.training_triples.append((self.entity_dict[r[0]], self.entity_dict[r[1]],self.relation_dict[r[2]]))
-
-        with open(self.data_dir / validation_file_name) as validation_f:
-            for r in csv.reader(validation_f, delimiter='\t'):
-                self.validation_triples.append((self.entity_dict[r[0]], self.entity_dict[r[1]],self.relation_dict[r[2]]))
+        self.load_knowledge_graph()
 
 
+    def load_knowledge_graph(self):
+        training_file_name = self.data_dir / "train.txt"
+        train_df = pd.read_csv(training_file_name, delimiter='\t', names=['head_entity', 'relation_type', 'tail_entity'])
+
+        # Initialize entity mapping
+        entity_list = list(train_df.head_entity) + list(train_df.tail_entity)
+        entity_set = set(entity_list)
+        self.entity_dict = dict(zip(entity_set, range(1, len(entity_set) + 1)))
+
+        # Initialize relation mapping
+        relation_list = list(train_df.relation_type)
+        relation_set = set(relation_list)
+        self.relation_dict = dict(zip(relation_set, range(1, len(relation_set)+1)))
+
+        # Map ids to triples in train_df and Initialize training triples
+        train_df.head_entity.map(self.entity_dict)
+        train_df.tail_entity.map(self.entity_dict)
+        train_df.relation_type.map(self.relation_dict)
+        self.training_triples = [tuple(fact) for fact in train_df.values]
+
+        # Initialize validation triples
+        validation_file_name = self.data_dir / "validation.txt"
+        validation_df = pd.read_csv(validation_file_name, delimiter='\t', names=['head_entity', 'relation_type', 'tail_entity'])
+        validation_df.head_entity.map(self.entity_dict)
+        validation_df.tail_entity.map(self.entity_dict)
+        validation_df.relation_type.map(self.relation_dict)
+        self.validation_triples = [tuple(fact) for fact in validation_df.values]
