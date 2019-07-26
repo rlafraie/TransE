@@ -92,7 +92,6 @@ class Fb23715k(Dataset):
         self.test_triples = self.load_triples(Path(data_dir) / 'test.txt')
         self.validation_triples = self.load_triples(Path(data_dir) / 'valid.txt')
 
-
     def load_triples(self, file):
         triple_list = []
 
@@ -107,3 +106,25 @@ class Fb23715k(Dataset):
                 triple_list.append(Fact(head_entity_id, relation_id, tail_entity_id))
 
             return triple_list
+
+
+class Wn18(Dataset):
+    def __init__(self, data_dir):
+        self.training_triples = self.load_triples(Path(data_dir) / 'train.txt')
+        self.test_triples = self.load_triples(Path(data_dir) / 'test.txt')
+        self.validation_triples = self.load_triples(Path(data_dir) / 'valid.txt')
+
+    def load_triples(self, file):
+        triple_list = []
+
+        with file.open() as f:
+            for fact in f:
+                head_entity, relation, tail_entity = fact.split()
+
+                head_entity_id = self.get_entity_id(head_entity)
+                tail_entity_id = self.get_entity_id(tail_entity)
+                relation_id = self.get_relation_id(relation)
+
+                triple_list.append(Fact(head_entity_id, relation_id, tail_entity_id))
+
+        return triple_list
