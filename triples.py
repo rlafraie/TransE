@@ -1,92 +1,136 @@
-import csv
 from pathlib import Path
 from typing import Dict, List
-import pandas as pd
-
-
-class Data:
-
-    def __init__(self, data_dir):
-        self.data_dir_root = Path.cwd() / 'data'
-        self.data_dir = self.data_dir_root / data_dir
-        self.entity_dict = dict()
-        self.relation_dict = dict()
-        self.training_triples = []
-        self.validation_triples = []
-        self.load_knowledge_graph()
-
-    def load_knowledge_graph(self):
-        training_file_name = self.data_dir / "train.txt"
-        train_df = pd.read_csv(training_file_name, delimiter='\t',
-                               names=['head_entity', 'relation_type', 'tail_entity'])
-
-        # Initialize entity mapping
-        entity_list = list(train_df.head_entity) + list(train_df.tail_entity)
-        entity_set = set(entity_list)
-        self.entity_dict = dict(zip(entity_set, range(1, len(entity_set) + 1)))
-
-        # Initialize relation mapping
-        relation_list = list(train_df.relation_type)
-        relation_set = set(relation_list)
-        self.relation_dict = dict(zip(relation_set, range(1, len(relation_set) + 1)))
-
-        # Map ids to triples in train_df and Initialize training triples
-        train_df.head_entity.map(self.entity_dict)
-        train_df.tail_entity.map(self.entity_dict)
-        train_df.relation_type.map(self.relation_dict)
-        self.training_triples = [tuple(fact) for fact in train_df.values]
-
-        # Initialize validation triples
-        validation_file_name = self.data_dir / "valid.txt"
-        validation_df = pd.read_csv(validation_file_name, delimiter='\t',
-                                    names=['head_entity', 'relation_type', 'tail_entity'])
-        validation_df.head_entity.map(self.entity_dict)
-        validation_df.tail_entity.map(self.entity_dict)
-        validation_df.relation_type.map(self.relation_dict)
-        self.validation_triples = [tuple(fact) for fact in validation_df.values]
-
-
-class Fact:
-    head_entity_id: int
-    relation_id: int
-    tail_entity_id: int
-
-    def __init__(self, head_entity_id, relation_id, tail_entity_id):
-        self.head_entity_id = head_entity_id
-        self.relation_id = relation_id
-        self.tail_entity_id = tail_entity_id
+import torch
 
 
 class Dataset:
-    entity_id_dict: Dict[str, int] = {}
+    entity2id_dict: Dict[str, int] = {}
+    id2entity_dict: Dict[int, str] = {}
     next_entity_id = 1
-    relation_id_dict: Dict[str, int] = {}
+    
+    relation2id_dict: Dict[str, int] = {}
+    id2relation_dict: Dict[str, int] = {}
     next_relation_id = 1
 
-    training_triples: List[Fact]
-    test_triples: List[Fact]
-    validation_triples: List[Fact]
+    head2tail_lookup = {}
+    tail2head_lookup = {}
+
+    training_triples: List[List]
+    test_triples: List[List]
+    validation_triples: List[List]
 
     def get_entity_id(self, entity):
-        if entity not in self.entity_id_dict:
-            self.entity_id_dict[entity] = self.next_entity_id
+        if entity not in self.entity2id_dict:
+            self.entity2id_dict[entity] = self.next_entity_id
+            self.id2entity_dict[self.next_entity_id] = entity
             entity_id = self.next_entity_id
-            self.next_entity_id = + 1
+            self.next_entity_id += 1
         else:
-            entity_id = self.entity_id_dict[entity]
+            entity_id = self.entity2id_dict[entity]
         return entity_id
 
     def get_relation_id(self, relation):
-        if relation not in self.relation_id_dict:
-            self.relation_id_dict[relation] = self.next_relation_id
+        if relation not in self.relation2id_dict:
+            self.relation2id_dict[relation] = self.next_relation_id
+            self.id2relation_dict[self.next_relation_id] = relation
             relation_id = self.next_relation_id
-            self.next_relation_id = + 1
+            self.next_relation_id += 1
         else:
-            relation_id = self.relation_id_dict[relation]
+            relation_id = self.relation2id_dict[relation]
         return relation_id
+
+    def set_head2tail_entry(self, head_id, relation_id, tail_id):
+        if head_id not in self.head2tail_lookup:
+            self.head2tail_lookup[head_id] = {relation_id: [tail_id]}
+        else:
+            if relation_id not in self.head2tail_lookup[head_id]:
+                self.head2tail_lookup[head_id][relation_id] = [tail_id]
+            else:
+                if tail_id not in self.head2tail_lookup[head_id][relation_id]:
+                    self.head2tail_lookup[head_id][relation_id].append(tail_id)
+                else:
+                    pass
+
+    def set_tail2head_entry(self, head_id, relation_id, tail_id):
+        if tail_id not in self.tail2head_lookup:
+            self.tail2head_lookup[tail_id] = {relation_id: [head_id]}
+        else:
+            if relation_id not in self.tail2head_lookup[tail_id]:
+                self.tail2head_lookup[tail_id][relation_id] = [head_id]
+            else:
+                if head_id not in self.tail2head_lookup[tail_id][relation_id]:
+                    self.tail2head_lookup[tail_id][relation_id].append(head_id)
+                else:
+                    pass
 
 
 class Fb23715k(Dataset):
+    def __init__(self, data_dir):
+        self.training_triples = self.load_triples(Path(data_dir) / 'train.txt')
+        self.test_triples = self.load_triples(Path(data_dir) / 'test.txt')
+        self.validation_triples = self.load_triples(Path(data_dir) / 'valid.txt')
+
+        self.num_entities = len(self.entity2id_dict)
+        self.num_of_relations = len(self.relation2id_dict)
+
+    def load_triples(self, file):
+        triple_list = []
+
+        with file.open() as data:
+            for fact in data:
+                head_entity, relation, tail_entity = fact.split()
+
+                head_entity_id = self.get_entity_id(head_entity)
+                tail_entity_id = self.get_entity_id(tail_entity)
+                relation_id = self.get_relation_id(relation)
+
+                self.set_head2tail_entry(head_entity_id, relation_id, tail_entity_id)
+                self.set_tail2head_entry(head_entity_id, relation_id, tail_entity_id)
+
+                triple_list.append([head_entity_id, relation_id, tail_entity_id])
+
+            return triple_list
+
+
+    # def get_corrupted_triples(self, triples:list):
+    #     corrupt_triples = []
+    #     for fact in triples:
+    #         head_id = fact[0]
+    #         relation_id = fact[1]
+    #         tail_id = fact[2]
+    #         print(head_id, relation_id, tail_id)
+    #         if torch.rand(1).uniform_(0,1).item() >= 0.5:
+    #             initial_head_id = head_id
+    #             while head_id in self.tail2head_lookup[tail_id][relation_id] or head_id == initial_head_id:
+    #                 head_id = torch.randint(1, self.num_entities + 1, (1,)).item()
+    #
+    #         else:
+    #             initial_tail_id = tail_id
+    #             while tail_id in self.head2tail_lookup[head_id][relation_id] or tail_id == initial_tail_id:
+    #                 tail_id = torch.randint(1, self.num_entities + 1, (1,)).item()
+    #                 print("corrupt_tail_id: "+str(tail_id))
+    #         print('done')
+    #         corrupt_triples.append([head_id, relation_id, tail_id])
+    #     return corrupt_triples
+
+    def get_corrupted_triples(self, triples: torch.tensor):
+        return torch.tensor(list(map(lambda x: self.corrupt_triple(x[0].item(), x[1].item(), x[2].item()), triples)))
+
+    def corrupt_triple(self, head_id: int, relation_id: int, tail_id: int):
+        if torch.rand(1).uniform_(0, 1).item() >= 0.5:
+            initial_head_id = head_id
+            while head_id in self.tail2head_lookup[tail_id][relation_id] or head_id == initial_head_id:
+                head_id = torch.randint(1, self.num_entities + 1, (1,)).item()
+
+        else:
+            initial_tail_id = tail_id
+            while tail_id in self.head2tail_lookup[head_id][relation_id] or tail_id == initial_tail_id:
+                tail_id = torch.randint(1, self.num_entities + 1, (1,)).item()
+
+        return [head_id, relation_id, tail_id]
+
+
+class Fb15k(Dataset):
     def __init__(self, data_dir):
         self.training_triples = self.load_triples(Path(data_dir) / 'train.txt')
         self.test_triples = self.load_triples(Path(data_dir) / 'test.txt')
@@ -103,7 +147,10 @@ class Fb23715k(Dataset):
                 tail_entity_id = self.get_entity_id(tail_entity)
                 relation_id = self.get_relation_id(relation)
 
-                triple_list.append(Fact(head_entity_id, relation_id, tail_entity_id))
+                self.set_head2tail_entry(head_entity_id, relation_id, tail_entity_id)
+                self.set_tail2head_entry(head_entity_id, relation_id, tail_entity_id)
+
+                triple_list.append([head_entity_id, relation_id, tail_entity_id])
 
             return triple_list
 
@@ -125,6 +172,9 @@ class Wn18(Dataset):
                 tail_entity_id = self.get_entity_id(tail_entity)
                 relation_id = self.get_relation_id(relation)
 
-                triple_list.append(Fact(head_entity_id, relation_id, tail_entity_id))
+                self.set_head2tail_entry(head_entity_id, relation_id, tail_entity_id)
+                self.set_tail2head_entry(head_entity_id, relation_id, tail_entity_id)
+
+                triple_list.append([head_entity_id, relation_id, tail_entity_id])
 
         return triple_list
