@@ -9,7 +9,7 @@ class Dataset:
     next_entity_id = 1
     
     relation2id_dict: Dict[str, int] = {}
-    id2relation_dict: Dict[str, int] = {}
+    id2relation_dict: Dict[int, str] = {}
     next_relation_id = 1
 
     head2tail_lookup = {}
@@ -70,7 +70,7 @@ class Fb23715k(Dataset):
         self.test_triples = self.load_triples(Path(data_dir) / 'test.txt')
         self.validation_triples = self.load_triples(Path(data_dir) / 'valid.txt')
 
-        self.num_entities = len(self.entity2id_dict)
+        self.num_of_entities = len(self.entity2id_dict)
         self.num_of_relations = len(self.relation2id_dict)
 
     def load_triples(self, file):
@@ -92,27 +92,6 @@ class Fb23715k(Dataset):
             return triple_list
 
 
-    # def get_corrupted_triples(self, triples:list):
-    #     corrupt_triples = []
-    #     for fact in triples:
-    #         head_id = fact[0]
-    #         relation_id = fact[1]
-    #         tail_id = fact[2]
-    #         print(head_id, relation_id, tail_id)
-    #         if torch.rand(1).uniform_(0,1).item() >= 0.5:
-    #             initial_head_id = head_id
-    #             while head_id in self.tail2head_lookup[tail_id][relation_id] or head_id == initial_head_id:
-    #                 head_id = torch.randint(1, self.num_entities + 1, (1,)).item()
-    #
-    #         else:
-    #             initial_tail_id = tail_id
-    #             while tail_id in self.head2tail_lookup[head_id][relation_id] or tail_id == initial_tail_id:
-    #                 tail_id = torch.randint(1, self.num_entities + 1, (1,)).item()
-    #                 print("corrupt_tail_id: "+str(tail_id))
-    #         print('done')
-    #         corrupt_triples.append([head_id, relation_id, tail_id])
-    #     return corrupt_triples
-
     def get_corrupted_triples(self, triples: torch.tensor):
         return torch.tensor(list(map(lambda x: self.corrupt_triple(x[0].item(), x[1].item(), x[2].item()), triples)))
 
@@ -120,12 +99,12 @@ class Fb23715k(Dataset):
         if torch.rand(1).uniform_(0, 1).item() >= 0.5:
             initial_head_id = head_id
             while head_id in self.tail2head_lookup[tail_id][relation_id] or head_id == initial_head_id:
-                head_id = torch.randint(1, self.num_entities + 1, (1,)).item()
+                head_id = torch.randint(1, self.num_of_entities + 1, (1,)).item()
 
         else:
             initial_tail_id = tail_id
             while tail_id in self.head2tail_lookup[head_id][relation_id] or tail_id == initial_tail_id:
-                tail_id = torch.randint(1, self.num_entities + 1, (1,)).item()
+                tail_id = torch.randint(1, self.num_of_entities + 1, (1,)).item()
 
         return [head_id, relation_id, tail_id]
 
@@ -178,3 +157,5 @@ class Wn18(Dataset):
                 triple_list.append([head_entity_id, relation_id, tail_entity_id])
 
         return triple_list
+
+
