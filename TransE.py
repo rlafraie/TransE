@@ -1,6 +1,8 @@
 import torch
 from torch import nn
 from torch.nn import functional as F
+from triples import Fb23715k
+
 
 class TransE(nn.Module):
     def __init__(self, num_of_entities, num_of_relations, num_of_dimensions, norm=2):
@@ -11,7 +13,7 @@ class TransE(nn.Module):
             self.entity_embeddings.weight.data.uniform_(-6 / num_of_dimensions ** 0.5, 6 / num_of_dimensions ** 0.5)
 
             self.relation_embeddings = nn.Embedding(num_of_relations, num_of_dimensions)
-            self.relation_embeddings.weight.data.uniform_(-6 / num_of_dimensions**0.5, 6 / num_of_dimensions ** 0.5)
+            self.relation_embeddings.weight.data.uniform_(-6 / num_of_dimensions ** 0.5, 6 / num_of_dimensions ** 0.5)
             self.relation_embeddings.weight.data = F.normalize(self.relation_embeddings.weight.data, p=2, dim=1)
 
     def forward(self, batch, corrupted_batch):
@@ -41,5 +43,3 @@ class TransE(nn.Module):
         corr_batch_energies = corr_batch_head_embeddings + corr_batch_relation_embeddings - corr_batch_tail_embeddings
 
         return batch_energies, corr_batch_energies
-
-
