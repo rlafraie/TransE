@@ -36,7 +36,48 @@ class Dataset:
             relation_id = self.relation2id_dict[relation]
         return relation_id
 
+    def load_lookup_dictionaries(self, triples: List[List]):
+        head2tail_lookup = {}
+        tail2head_lookup = {}
 
+        for head_id, relation_id, tail_id in triples:
+
+            if head_id not in head2tail_lookup:
+                head2tail_lookup[head_id] = {relation_id: [tail_id]}
+            else:
+                if relation_id not in head2tail_lookup[head_id]:
+                    head2tail_lookup[head_id][relation_id] = [tail_id]
+                else:
+                    if tail_id not in head2tail_lookup[head_id][relation_id]:
+                        head2tail_lookup[head_id][relation_id].append(tail_id)
+
+            if tail_id not in tail2head_lookup:
+                tail2head_lookup[tail_id] = {relation_id: [head_id]}
+            else:
+                if relation_id not in tail2head_lookup[tail_id]:
+                    tail2head_lookup[tail_id][relation_id] = [head_id]
+                else:
+                    if head_id not in tail2head_lookup[tail_id][relation_id]:
+                        tail2head_lookup[tail_id][relation_id].append(head_id)
+
+        return head2tail_lookup, tail2head_lookup
+
+    def get_corrupted_training_triples(self, triples: torch.tensor):
+        return torch.tensor(
+            list(map(lambda x: self.corrupt_training_triple(x[0].item(), x[1].item(), x[2].item()), triples)))
+
+    def corrupt_training_triple(self, head_id: int, relation_id: int, tail_id: int):
+        if torch.rand(1).uniform_(0, 1).item() >= 0.5:
+            initial_head_id = head_id
+            while head_id in self.train_tail2head_lookup[tail_id][relation_id] or head_id == initial_head_id:
+                head_id = torch.randint(self.num_of_entities, (1,)).item()
+
+        else:
+            initial_tail_id = tail_id
+            while tail_id in self.train_head2tail_lookup[head_id][relation_id] or tail_id == initial_tail_id:
+                tail_id = torch.randint(self.num_of_entities, (1,)).item()
+
+        return [head_id, relation_id, tail_id]
 
 
 class Fb23715k(Dataset):
@@ -66,80 +107,7 @@ class Fb23715k(Dataset):
 
                 triple_list.append([head_entity_id, relation_id, tail_entity_id])
 
-            return triple_list
-
-    def load_lookup_dictionaries(self, triples: List[List]):
-        head2tail_lookup = {}
-        tail2head_lookup = {}
-
-        for head_id, relation_id, tail_id in triples:
-
-            if head_id not in head2tail_lookup:
-                head2tail_lookup[head_id] = {relation_id: [tail_id]}
-            else:
-                if relation_id not in head2tail_lookup[head_id]:
-                    head2tail_lookup[head_id][relation_id] = [tail_id]
-                else:
-                    if tail_id not in head2tail_lookup[head_id][relation_id]:
-                        head2tail_lookup[head_id][relation_id].append(tail_id)
-
-            if tail_id not in tail2head_lookup:
-                tail2head_lookup[tail_id] = {relation_id: [head_id]}
-            else:
-                if relation_id not in tail2head_lookup[tail_id]:
-                    tail2head_lookup[tail_id][relation_id] = [head_id]
-                else:
-                    if head_id not in tail2head_lookup[tail_id][relation_id]:
-                        tail2head_lookup[tail_id][relation_id].append(head_id)
-
-        return head2tail_lookup, tail2head_lookup
-
-    def gather_ranking_tail_triples(self, head_id: int, relation_id: int, tail_id: int,
-                                    remove_training_validation_entities=False):
-        entity_list = list(self.id2entity_dict.keys())
-
-        if remove_training_validation_entities:
-            filtered_entities = self.train_head2tail_lookup[head_id][relation_id] + \
-                                self.valid_head2tail_lookup[head_id][relation_id]
-            tail_list = list(set(entity_list) - set(filtered_entities))
-
-        entity_list = list(set(entity_list) - set([tail_id])) + [tail_id]
-        head_list = [head_id] * len(entity_list)
-        relation_list = [relation_id] * len(entity_list)
-
-        return torch.tensor([list(i) for i in zip(head_list, relation_list, tail_list)])
-
-    def gather_ranking_head_triples(self, head_id: int, relation_id: int, tail_id: int,
-                                    remove_training_validation_entities=False):
-        entity_list = list(self.id2entity_dict.keys())
-
-        if remove_training_validation_entities:
-            filtered_entities = self.train_tail2head_lookup[tail_id][relation_id] + \
-                                self.valid_tail2head_lookup[tail_id][relation_id]
-            entity_list = list(set(entity_list) - set(filtered_entities))
-
-        entity_list = list(set(entity_list) - set([head_id])) + [head_id]
-        tail_list = [tail_id] * len(entity_list)
-        relation_list = [relation_id] * len(entity_list)
-
-        return torch.tensor([list(i) for i in zip(entity_list, relation_list, tail_list)])
-
-    def get_corrupted_training_triples(self, triples: torch.tensor):
-        return torch.tensor(
-            list(map(lambda x: self.corrupt_training_triple(x[0].item(), x[1].item(), x[2].item()), triples)))
-
-    def corrupt_training_triple(self, head_id: int, relation_id: int, tail_id: int):
-        if torch.rand(1).uniform_(0, 1).item() >= 0.5:
-            initial_head_id = head_id
-            while head_id in self.train_tail2head_lookup[tail_id][relation_id] or head_id == initial_head_id:
-                head_id = torch.randint(self.num_of_entities, (1,)).item()
-
-        else:
-            initial_tail_id = tail_id
-            while tail_id in self.train_head2tail_lookup[head_id][relation_id] or tail_id == initial_tail_id:
-                tail_id = torch.randint(self.num_of_entities, (1,)).item()
-
-        return [head_id, relation_id, tail_id]
+        return triple_list
 
 
 class Fb15k(Dataset):
