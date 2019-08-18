@@ -5,7 +5,7 @@ from triples import Fb23715k
 
 
 class TransE(nn.Module):
-    def __init__(self, num_of_entities, num_of_relations, num_of_dimensions, norm=2):
+    def __init__(self, num_of_entities: int, num_of_relations: int, num_of_dimensions: int, norm: int = 2):
         super().__init__()
         self.norm = norm
         with torch.no_grad():
@@ -16,7 +16,7 @@ class TransE(nn.Module):
             self.relation_embeddings.weight.data.uniform_(-6 / num_of_dimensions ** 0.5, 6 / num_of_dimensions ** 0.5)
             self.relation_embeddings.weight.data = F.normalize(self.relation_embeddings.weight.data, p=2, dim=1)
 
-    def forward(self, batch, corrupted_batch):
+    def forward(self, batch: torch.tensor, corrupted_batch: torch.tensor):
         # normalize entity embeddings
         with torch.no_grad():
             self.entity_embeddings.weight.data = F.normalize(self.entity_embeddings.weight.data, p=2, dim=1)

@@ -16,7 +16,17 @@ class Dataset:
     test_triples: List[List]
     validation_triples: List[List]
 
-    def get_entity_id(self, entity):
+    train_head2tail_lookup: Dict[int, Dict[int, List]] = {}
+    train_tail2head_lookup: Dict[int, Dict[int, List]] = {}
+    valid_head2tail_lookup: Dict[int, Dict[int, List]] = {}
+    valid_tail2head_lookup: Dict[int, Dict[int, List]] = {}
+    test_head2tail_lookup: Dict[int, Dict[int, List]] = {}
+    test_tail2head_lookup: Dict[int, Dict[int, List]] = {}
+
+    num_of_entities: int = 0
+    num_of_relations: int = 0
+
+    def get_entity_id(self, entity: str) -> int:
         if entity not in self.entity2id_dict:
             self.entity2id_dict[entity] = self.next_entity_id
             self.id2entity_dict[self.next_entity_id] = entity
@@ -26,7 +36,7 @@ class Dataset:
             entity_id = self.entity2id_dict[entity]
         return entity_id
 
-    def get_relation_id(self, relation):
+    def get_relation_id(self, relation: str) -> int:
         if relation not in self.relation2id_dict:
             self.relation2id_dict[relation] = self.next_relation_id
             self.id2relation_dict[self.next_relation_id] = relation
@@ -36,7 +46,7 @@ class Dataset:
             relation_id = self.relation2id_dict[relation]
         return relation_id
 
-    def load_lookup_dictionaries(self, triples: List[List]):
+    def load_lookup_dictionaries(self, triples: List[List]) -> (Dict[int, Dict[int, List]], Dict[int, Dict[int, List]]):
         head2tail_lookup = {}
         tail2head_lookup = {}
 
@@ -62,11 +72,11 @@ class Dataset:
 
         return head2tail_lookup, tail2head_lookup
 
-    def get_corrupted_training_triples(self, triples: torch.tensor):
+    def get_corrupted_training_triples(self, triples: torch.tensor) -> torch.tensor:
         return torch.tensor(
             list(map(lambda x: self.corrupt_training_triple(x[0].item(), x[1].item(), x[2].item()), triples)))
 
-    def corrupt_training_triple(self, head_id: int, relation_id: int, tail_id: int):
+    def corrupt_training_triple(self, head_id: int, relation_id: int, tail_id: int) -> List[int]:
         if torch.rand(1).uniform_(0, 1).item() >= 0.5:
             initial_head_id = head_id
             while head_id in self.train_tail2head_lookup[tail_id][relation_id] or head_id == initial_head_id:
@@ -94,7 +104,7 @@ class Fb23715k(Dataset):
             self.validation_triples)
         self.test_head2tail_lookup, self.test_tail2head_lookup = self.load_lookup_dictionaries(self.test_triples)
 
-    def load_triples(self, file):
+    def load_triples(self, file: Path) -> List[List[int]]:
         triple_list = []
 
         with file.open() as data:
@@ -116,7 +126,7 @@ class Fb15k(Dataset):
         self.test_triples = self.load_triples(Path(data_dir) / 'test.txt')
         self.validation_triples = self.load_triples(Path(data_dir) / 'valid.txt')
 
-    def load_triples(self, file):
+    def load_triples(self, file: Path) -> List[List[int]]:
         triple_list = []
 
         with file.open() as data:
@@ -138,7 +148,7 @@ class Wn18(Dataset):
         self.test_triples = self.load_triples(Path(data_dir) / 'test.txt')
         self.validation_triples = self.load_triples(Path(data_dir) / 'valid.txt')
 
-    def load_triples(self, file):
+    def load_triples(self, file: Path) -> List[List[int]]:
         triple_list = []
 
         with file.open() as f:
