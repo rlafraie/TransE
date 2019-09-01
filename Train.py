@@ -1,14 +1,17 @@
 import torch
+from torch import nn
 from torch.utils.data import DataLoader, TensorDataset
 from torch.nn import functional as F
 from torch import optim
 from TransE import TransE
 from triples import Dataset
 from typing import List
+from tqdm import tqdm
 
+519.6097674191342
 
-class Experiment:
-    def __init__(self, knowledge_graph: Dataset, num_of_epochs: int = 10, batch_size: int = 100, margin: int = 1,
+class Experiment():
+    def __init__(self, knowledge_graph: Dataset, num_of_epochs: int = 50, batch_size: int = 100, margin: int = 1,
                  norm: int = 1, learning_rate: float = 0.01, num_of_dimensions: int = 50):
         self.knowledge_graph = knowledge_graph
 
@@ -23,12 +26,8 @@ class Experiment:
         self.num_of_entities = knowledge_graph.num_of_entities
         self.num_of_relations = knowledge_graph.num_of_relations
 
-        self.transe: TransE = TransE(knowledge_graph.num_of_entities, knowledge_graph.num_of_relations, num_of_dimensions, norm)
-        self.dataset: TensorDataset = TensorDataset(torch.tensor(knowledge_graph.training_triples))
-        self.train_dl: DataLoader = DataLoader(self.dataset, batch_size=batch_size)
-
-        self.optimizer: optim = optim.SGD(self.transe.parameters(), lr=learning_rate)
-
+        self.transe: TransE = TransE(knowledge_graph.num_of_entities, knowledge_graph.num_of_relations,
+                                     num_of_dimensions, norm)
         self.loss: float = 0.0
 
         self.validation_mean_rank: float = 0.0
@@ -47,37 +46,43 @@ class Experiment:
         self.test_hits10: int = 0
         self.test_hits10_filtered: int = 0
 
-    def train(self):
-        ##Training Iterations##
+    def train(self, filtered_corrupted_batch=True):
+        dataset: TensorDataset = TensorDataset(torch.tensor(self.knowledge_graph.training_triples))
+        train_dl: DataLoader = DataLoader(dataset, batch_size=self.batch_size)
+        optimizer: optim = optim.SGD(self.transe.parameters(), lr=self.learning_rate)
+
         for i in range(self.num_of_epochs):
-            for batch in self.train_dl:
+            epoch_loss = 0
+            for batch in tqdm(train_dl):
                 mini_batch = batch[0]
-                corr_mini_batch = self.knowledge_graph.get_corrupted_training_triples(mini_batch)
+                corr_mini_batch = \
+                    self.knowledge_graph.get_corrupted_training_triples(mini_batch) if filtered_corrupted_batch \
+                    else self.knowledge_graph.get_corrupted_batch_unfiltered(mini_batch)
+
                 batch_loss, corr_batch_loss = self.transe(mini_batch, corr_mini_batch)
 
-                self.loss = F.relu(
-                    self.margin + batch_loss.norm(p=self.norm, dim=1) - corr_batch_loss.norm(p=self.norm, dim=1)).sum()
+                loss = F.relu(self.margin + batch_loss.norm(p=self.norm, dim=1)
+                              - corr_batch_loss.norm(p=self.norm, dim=1)).sum()
+                loss.backward()
+                optimizer.step()
+                optimizer.zero_grad()
+                epoch_loss += loss
 
-                self.loss.backward()
-                print("------------------------------------------------------------")
-                print("loss: ", self.loss)
-                print("------------------------------------------------------------")
-                self.optimizer.step()
-                self.optimizer.zero_grad()
-
-            self.validation_mean_rank = self.get_validation_mean_rank(fast_validation=True)
+            with torch.no_grad():
+                self.loss = epoch_loss / train_dl.__len__()
+            self.validation_mean_rank = self.get_validation_mean_rank()
             # self.validation_mean_rank_filtered = self.get_validation_mean_rank(filtered=True, fast_validation=True)
+            print("loss for epoch %s:" % str(i + 1), self.loss)
 
-        if self.best_validation_mean_rank > self.validation_mean_rank:
-            self.best_validation_mean_rank = self.validation_mean_rank
+            if self.best_validation_mean_rank > self.validation_mean_rank:
+                self.best_validation_mean_rank = self.validation_mean_rank
 
-        if self.best_validation_mean_rank_filtered > self.validation_mean_rank_filtered:
-            self.best_validation_mean_rank_filtered = self.validation_mean_rank_filtered
+            if self.best_validation_mean_rank_filtered > self.validation_mean_rank_filtered:
+                self.best_validation_mean_rank_filtered = self.validation_mean_rank_filtered
 
     @torch.no_grad()
     def get_validation_mean_rank(self, filtered=False, fast_validation=True) -> float:
         mean_rank = 0
-        processed = 0
         threshold = 3999 if fast_validation else len(self.knowledge_graph.validation_triples) - 1
 
         if filtered:
@@ -85,19 +90,21 @@ class Experiment:
         else:
             self.validation_hits10 = 0
 
-        for triple in self.knowledge_graph.validation_triples[:threshold]:
+        for triple in tqdm(self.knowledge_graph.validation_triples[:threshold]):
             head_id, relation_id, tail_id = triple[0], triple[1], triple[2]
             mean_rank += self.get_filtered_validation_triple_mean_rank(head_id, relation_id, tail_id) \
                 if filtered else self.get_raw_validation_triple_mean_rank(head_id, relation_id, tail_id)
-            processed += 1
-            print("processed " + str(processed) + " of " + str(threshold))
+
+        if filtered:
+            self.validation_mean_rank_filtered = mean_rank / (threshold + 1)
+        else:
+            self.validation_mean_rank = mean_rank / (threshold + 1)
 
         return mean_rank / (threshold + 1)
 
     @torch.no_grad()
     def get_test_mean_rank(self, filtered=False, fast_testing=True) -> float:
         mean_rank = 0
-        processed = 0
         threshold = 3999 if fast_testing else len(self.knowledge_graph.test_triples) - 1
 
         if filtered:
@@ -105,16 +112,19 @@ class Experiment:
         else:
             self.test_hits10 = 0
 
-        for triple in self.knowledge_graph.test_triples[:threshold]:
+        for triple in tqdm(self.knowledge_graph.test_triples[:threshold]):
             head_id, relation_id, tail_id = triple[0], triple[1], triple[2]
             mean_rank += self.get_filtered_test_triple_mean_rank(head_id, relation_id, tail_id) \
                 if filtered else self.get_raw_test_triple_mean_rank(head_id, relation_id, tail_id)
-            processed += 1
-            print("processed " + str(processed) + " of " + str(threshold))
+
+        if filtered:
+            self.test_mean_rank_filtered = mean_rank / (threshold + 1)
+        else:
+            self.test_mean_rank = mean_rank / (threshold + 1)
 
         return mean_rank / (threshold + 1)
 
-    def get_raw_triple_ranks(self, head_id: int, relation_id: int, tail_id:int) -> (int, int):
+    def get_raw_triple_ranks(self, head_id: int, relation_id: int, tail_id: int) -> (int, int):
         head_embeddings = self.transe.entity_embeddings(torch.tensor(head_id)).repeat(
             self.knowledge_graph.num_of_entities, 1)
         relation_embeddings = self.transe.relation_embeddings(torch.tensor(relation_id)).repeat(
@@ -259,3 +269,12 @@ class Experiment:
             self.test_hits10_filtered += 1
 
         return (rank_head + rank_tail) / 2
+
+    def save_model_params(self, filename):
+        file_path = self.knowledge_graph.data_dir / str(filename + '.pickle')
+        torch.save(self.transe.state_dict(), file_path)
+
+    def load_model_params(self, filename):
+        file_path = self.knowledge_graph.data_dir / str(filename + '.pickle')
+        self.transe.load_state_dict(torch.load(file_path))
+
