@@ -10,7 +10,7 @@ class Datasubset:
     tail2head_lookup: Dict[int, Dict[int, set]] = {}
 
 
-class Dataset:
+class KnowledgeGraph:
     data_dir = ''
 
     entity2id_dict: Dict[str, int] = {}
@@ -27,6 +27,16 @@ class Dataset:
 
     num_of_entities: int = 0
     num_of_relations: int = 0
+
+    def factory(knowledge_graph_name):
+        if knowledge_graph_name == 'Fb15k-237':
+            return Fb15k237(Path.cwd() / 'data' / 'fb15k-237')
+
+        if knowledge_graph_name == 'Fb15k':
+            return Fb15k(Path.cwd() / 'data' / 'fb15k')
+
+        if knowledge_graph_name == 'Wn18':
+            return Wn18(Path.cwd() / 'data' / 'wn18')
 
     def get_entity_id(self, entity: str) -> int:
         if entity not in self.entity2id_dict:
@@ -91,7 +101,7 @@ class Dataset:
         return corrupted_batch
 
 
-class Fb23715k(Dataset):
+class Fb15k237(KnowledgeGraph):
     def __init__(self, data_dir):
         self.data_dir = data_dir
 
@@ -125,7 +135,7 @@ class Fb23715k(Dataset):
         return triple_list
 
 
-class Fb15k(Dataset):
+class Fb15k(KnowledgeGraph):
     def __init__(self, data_dir):
         self.training_triples = self.load_triples(Path(data_dir) / 'train.txt')
         self.test_triples = self.load_triples(Path(data_dir) / 'test.txt')
@@ -157,7 +167,7 @@ class Fb15k(Dataset):
             return triple_list
 
 
-class Wn18(Dataset):
+class Wn18(KnowledgeGraph):
     def __init__(self, data_dir):
         self.training_triples = self.load_triples(Path(data_dir) / 'train.txt')
         self.test_triples = self.load_triples(Path(data_dir) / 'test.txt')
