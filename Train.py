@@ -42,6 +42,8 @@ class Experiment:
         print('  Norm: L{}'.format(self.norm), file=output_log_file)
         print('  Learning Rate:', self.learning_rate, file=output_log_file)
         print('  Number of Dimensions:', self.num_of_dimensions, file=output_log_file)
+        print(' ', file=output_log_file)
+        print(' ', file=output_log_file)
 
         training_losses = []
 
@@ -84,16 +86,17 @@ class Experiment:
                 training_hits.append(training_hits10)
 
                 print('Validation for epoch', epoch + 1, file=output_log_file)
-                print(' Epoch loss: :      ', round(epoch_loss, 4), file=output_log_file)
-                print(' Train Dataset:      hits@10(raw)= {} mean_rank(raw)= {}'
+                print('     Epoch loss: :      ', round(epoch_loss, 4), file=output_log_file)
+                print('     Train Dataset:      hits@10(raw)= {} mean_rank(raw)= {}'
                       .format(training_hits10, training_mean_rank), file=output_log_file)
 
                 validation_mean_rank, validation_hits10 = self.get_evaluation_scores(self.knowledge_graph.valid_dataset)
                 validation_mean_ranks.append(validation_mean_rank)
                 validation_hits.append(validation_hits10)
 
-                print(' Validation Dataset: hits@10= {} mean_rank= {}'
+                print('     Validation Dataset: hits@10= {} mean_rank= {}'
                       .format(validation_hits10, validation_mean_rank), file=output_log_file)
+                print('--------------------------------', file=output_log_file)
 
                 # if self.best_validation_mean_rank > self.validation_mean_rank:
                 #     self.best_validation_mean_rank = self.validation_mean_rank
