@@ -78,7 +78,7 @@ class Experiment:
                 epoch_loss = (epoch_loss / train_dl.__len__()).item()
                 training_losses.append(round(epoch_loss, 4))
 
-            if (epoch + 1 % self.validation_freq == 0) or (epoch + 1 == self.num_of_epochs):
+            if ((epoch + 1) % self.validation_freq == 0) or ((epoch + 1) == self.num_of_epochs):
                 output_losses.append(round(epoch_loss, 4))
 
                 training_mean_rank, training_hits10 = self.get_evaluation_scores(self.knowledge_graph.train_dataset)
@@ -139,7 +139,7 @@ class Experiment:
         print('     hits@10(raw)={} mean_rank(raw)={}'.format(raw_test_hits, raw_test_mean_rank), file=output_log_file)
         print('     hits@10(filtered)={} mean_rank(filtered)={}'.format(filtered_test_hits,
                                                                         filtered_test_mean_rank), file=output_log_file)
-
+        output_log_file.close()
         hyper_param_config = [hyper_param_path.name, self.num_of_epochs, self.batch_size, self.margin, self.norm,
                               self.learning_rate, self.num_of_dimensions]
         update_hyper_param_sheet(hyper_param_path.parent, 'hyper_param_mapping.xlsx', hyper_param_config)
