@@ -57,7 +57,7 @@ def save_figure(hyper_param_path: Path, filename: str, title: str, xlabel: str, 
     plt.title(title)
     plt.xlabel(xlabel)
     plt.ylabel(ylabel)
-    plt.xticks(np.arange(1, num_of_epochs + 1, validation_freq))
+    plt.xticks(np.arange(1, num_of_epochs + 1, (num_of_epochs / validation_freq)))
 
     training_line, = plt.plot(range(1, num_of_epochs + 1), training_data_points, 'g', label='Training_score')
     lines.append(training_line)
