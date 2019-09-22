@@ -38,6 +38,12 @@ class KnowledgeGraph:
         if knowledge_graph_name == 'Wn18':
             return Wn18(Path.cwd() / 'data' / 'wn18')
 
+        if knowledge_graph_name == 'Wn18RR':
+            return Wn18RR(Path.cwd() / 'data' / 'wn18rr')
+
+        if knowledge_graph_name == 'YAGO3-10':
+            return YAGO310(Path.cwd() / 'data' / 'yago3-10')
+
     def get_entity_id(self, entity: str) -> int:
         if entity not in self.entity2id_dict:
             self.entity2id_dict[entity] = self.next_entity_id
@@ -85,13 +91,14 @@ class KnowledgeGraph:
 
         return [head_id, relation_id, tail_id]
 
-    def get_corrupted_batch_unfiltered(self, batch: torch.tensor):
-        corrupted_batch = batch.clone()
-        head_tail_indexes = torch.randint(2, (batch.shape[0],)) * 2
+    def get_corrupted_batch_unfiltered(self, batch: torch.tensor, device: torch.device):
+        corrupted_batch = batch.clone().to()
+        head_tail_indexes = torch.randint(2, (batch.shape[0],)).to(device) * 2
         corrupted_batch[torch.arange(corrupted_batch.shape[0]), head_tail_indexes] = torch.randint(self.num_of_entities,
                                                                                                    (
-                                                                                                   corrupted_batch.shape[
-                                                                                                       0],))
+                                                                                                       corrupted_batch.shape[
+                                                                                                           0],)).to(
+            device)
 
         # torch.randint statement randomly generates 0 or 1. The outcome is multiplied with 2 to get 0 or 2
         # which is the column index for either the head_id or tail_id. Hence, we create a tensor defining
@@ -137,19 +144,21 @@ class Fb15k237(KnowledgeGraph):
 
 class Fb15k(KnowledgeGraph):
     def __init__(self, data_dir):
-        self.training_triples = self.load_triples(Path(data_dir) / 'train.txt')
-        self.test_triples = self.load_triples(Path(data_dir) / 'test.txt')
-        self.validation_triples = self.load_triples(Path(data_dir) / 'valid.txt')
+        self.data_dir = data_dir
+
+        self.train_dataset.triples = self.load_triples(Path(data_dir) / 'train.txt')
+        self.valid_dataset.triples = self.load_triples(Path(data_dir) / 'valid.txt')
+        self.test_dataset.triples = self.load_triples(Path(data_dir) / 'test.txt')
+
+        self.train_dataset.head2tail_lookup, self.train_dataset.tail2head_lookup = self.load_lookup_dictionaries(
+            self.train_dataset.triples)
+        self.valid_dataset.head2tail_lookup, self.valid_dataset.tail2head_lookup = self.load_lookup_dictionaries(
+            self.valid_dataset.triples)
+        self.test_dataset.head2tail_lookup, self.test_dataset.tail2head_lookup = self.load_lookup_dictionaries(
+            self.test_dataset.triples)
 
         self.num_of_entities = len(self.entity2id_dict)
         self.num_of_relations = len(self.relation2id_dict)
-
-        self.train_dataset.head2tail_lookup, self.train_dataset.tail2head_lookup = self.load_lookup_dictionaries(
-            self.training_triples)
-        self.valid_dataset.head2tail_lookup, self.valid_dataset.tail2head_lookup = self.load_lookup_dictionaries(
-            self.validation_triples)
-        self.test_dataset.head2tail_lookup, self.test_dataset.tail2head_lookup = self.load_lookup_dictionaries(
-            self.test_triples)
 
     def load_triples(self, file: Path) -> List[List[int]]:
         triple_list = []
@@ -169,19 +178,90 @@ class Fb15k(KnowledgeGraph):
 
 class Wn18(KnowledgeGraph):
     def __init__(self, data_dir):
-        self.training_triples = self.load_triples(Path(data_dir) / 'train.txt')
-        self.test_triples = self.load_triples(Path(data_dir) / 'test.txt')
-        self.validation_triples = self.load_triples(Path(data_dir) / 'valid.txt')
+        self.data_dir = data_dir
+
+        self.train_dataset.triples = self.load_triples(Path(data_dir) / 'train.txt')
+        self.valid_dataset.triples = self.load_triples(Path(data_dir) / 'valid.txt')
+        self.test_dataset.triples = self.load_triples(Path(data_dir) / 'test.txt')
+
+        self.train_dataset.head2tail_lookup, self.train_dataset.tail2head_lookup = self.load_lookup_dictionaries(
+            self.train_dataset.triples)
+        self.valid_dataset.head2tail_lookup, self.valid_dataset.tail2head_lookup = self.load_lookup_dictionaries(
+            self.valid_dataset.triples)
+        self.test_dataset.head2tail_lookup, self.test_dataset.tail2head_lookup = self.load_lookup_dictionaries(
+            self.test_dataset.triples)
 
         self.num_of_entities = len(self.entity2id_dict)
         self.num_of_relations = len(self.relation2id_dict)
 
+    def load_triples(self, file: Path) -> List[List[int]]:
+        triple_list = []
+
+        with file.open() as f:
+            for fact in f:
+                head_entity, relation, tail_entity = fact.split()
+
+                head_entity_id = self.get_entity_id(head_entity)
+                tail_entity_id = self.get_entity_id(tail_entity)
+                relation_id = self.get_relation_id(relation)
+
+                triple_list.append([head_entity_id, relation_id, tail_entity_id])
+
+        return triple_list
+
+
+class Wn18RR(KnowledgeGraph):
+    def __init__(self, data_dir):
+        self.data_dir = data_dir
+
+        self.train_dataset.triples = self.load_triples(Path(data_dir) / 'train.txt')
+        self.valid_dataset.triples = self.load_triples(Path(data_dir) / 'valid.txt')
+        self.test_dataset.triples = self.load_triples(Path(data_dir) / 'test.txt')
+
         self.train_dataset.head2tail_lookup, self.train_dataset.tail2head_lookup = self.load_lookup_dictionaries(
-            self.training_triples)
+            self.train_dataset.triples)
         self.valid_dataset.head2tail_lookup, self.valid_dataset.tail2head_lookup = self.load_lookup_dictionaries(
-            self.validation_triples)
+            self.valid_dataset.triples)
         self.test_dataset.head2tail_lookup, self.test_dataset.tail2head_lookup = self.load_lookup_dictionaries(
-            self.test_triples)
+            self.test_dataset.triples)
+
+        self.num_of_entities = len(self.entity2id_dict)
+        self.num_of_relations = len(self.relation2id_dict)
+
+    def load_triples(self, file: Path) -> List[List[int]]:
+        triple_list = []
+
+        with file.open() as f:
+            for fact in f:
+                head_entity, relation, tail_entity = fact.split()
+
+                head_entity_id = self.get_entity_id(head_entity)
+                tail_entity_id = self.get_entity_id(tail_entity)
+                relation_id = self.get_relation_id(relation)
+
+                triple_list.append([head_entity_id, relation_id, tail_entity_id])
+
+        return triple_list
+
+
+class YAGO310(KnowledgeGraph):
+    def __init__(self, data_dir):
+        self.data_dir = data_dir
+
+        self.train_dataset.triples = self.load_triples(Path(data_dir) / 'train.txt')
+        self.valid_dataset.triples = self.load_triples(Path(data_dir) / 'valid.txt')
+        self.test_dataset.triples = self.load_triples(Path(data_dir) / 'test.txt')
+
+        self.train_dataset.head2tail_lookup, self.train_dataset.tail2head_lookup = self.load_lookup_dictionaries(
+            self.train_dataset.triples)
+        self.valid_dataset.head2tail_lookup, self.valid_dataset.tail2head_lookup = self.load_lookup_dictionaries(
+            self.valid_dataset.triples)
+        self.test_dataset.head2tail_lookup, self.test_dataset.tail2head_lookup = self.load_lookup_dictionaries(
+            self.test_dataset.triples)
+
+        self.num_of_entities = len(self.entity2id_dict)
+        self.num_of_relations = len(self.relation2id_dict)
+
 
     def load_triples(self, file: Path) -> List[List[int]]:
         triple_list = []

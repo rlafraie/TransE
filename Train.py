@@ -1,5 +1,4 @@
 import torch
-from torch import nn
 from torch.utils.data import DataLoader, TensorDataset
 from torch.nn import functional as F
 from torch import optim
@@ -23,6 +22,7 @@ class Experiment:
         self.margin = margin
         self.norm = norm
         self.learning_rate = learning_rate
+        self.early_stop_threshold = 5
 
         self.num_of_dimensions = num_of_dimensions
         self.num_of_entities = knowledge_graph.num_of_entities
@@ -31,7 +31,16 @@ class Experiment:
         self.transe: TransE = TransE(knowledge_graph.num_of_entities, knowledge_graph.num_of_relations,
                                      num_of_dimensions, norm)
 
-    def train(self, filtered_corrupted_batch=True):
+        self.device = torch.device('cuda:0') if torch.cuda.is_available() else torch.device('cpu')
+
+        self.transe.to(self.device)
+
+        self.best_mean_rank_score = None
+        self.best_mean_rank_epoch = None
+        self.best_mean_rank_entity_embeddings = None
+        self.best_mean_rank_relation_embeddings = None
+
+    def train(self, filtered_corrupted_batch=False):
         hyper_param_path = initialize_log_folder(self.knowledge_graph.data_dir)
         output_log_file = open(hyper_param_path / 'log.txt', 'w')
 
@@ -57,15 +66,23 @@ class Experiment:
         train_dl = DataLoader(dataset, batch_size=self.batch_size)
         optimizer = optim.SGD(self.transe.parameters(), lr=self.learning_rate)
 
+        self.best_mean_rank_epoch = 1
+        self.best_mean_rank_score = self.get_evaluation_scores(self.knowledge_graph.valid_dataset)[0]
+        self.best_mean_rank_entity_embeddings = self.transe.entity_embeddings.weight.data.clone()
+        self.best_mean_rank_relation_embeddings = self.transe.relation_embeddings.weight.data.clone()
+
         for epoch in range(self.num_of_epochs):
             epoch_loss = 0
             for batch in tqdm(train_dl):
-                mini_batch = batch[0]
+                mini_batch = batch[0].to(self.device)
                 corr_mini_batch = \
-                    self.knowledge_graph.get_corrupted_training_triples(mini_batch) if filtered_corrupted_batch \
-                        else self.knowledge_graph.get_corrupted_batch_unfiltered(mini_batch)
+                    self.knowledge_graph.get_corrupted_training_triples(mini_batch).to(self.device) \
+                        if filtered_corrupted_batch \
+                        else self.knowledge_graph.get_corrupted_batch_unfiltered(mini_batch, self.device)
 
                 batch_loss, corr_batch_loss = self.transe(mini_batch, corr_mini_batch)
+                batch_loss.to(self.device)
+                corr_batch_loss.to(self.device)
 
                 loss = F.relu(self.margin + batch_loss.norm(p=self.norm, dim=1)
                               - corr_batch_loss.norm(p=self.norm, dim=1)).sum()
@@ -98,21 +115,38 @@ class Experiment:
                       .format(validation_hits10, validation_mean_rank), file=output_log_file)
                 print('--------------------------------', file=output_log_file)
 
-                # if self.best_validation_mean_rank > self.validation_mean_rank:
-                #     self.best_validation_mean_rank = self.validation_mean_rank
-                #
-                # if self.best_validation_mean_rank_filtered > self.validation_mean_rank_filtered:
-                #     self.best_validation_mean_rank_filtered = self.validation_mean_rank_filtered
+                if validation_mean_rank < self.best_mean_rank_score:
+                    self.best_mean_rank_epoch = epoch + 1
+                    self.best_mean_rank_score = validation_mean_rank
+                    self.best_mean_rank_entity_embeddings = self.transe.entity_embeddings.weight.data.clone()
+                    self.best_mean_rank_relation_embeddings = self.transe.relation_embeddings.weight.data.clone()
+                else:
+                    self.early_stop_threshold -= 1
+
+            if self.early_stop_threshold == 0:
+                self.num_of_epochs = self.best_mean_rank_epoch
+                self.transe.entity_embeddings.weight.data = self.best_mean_rank_entity_embeddings
+                self.transe.relation_embeddings.weight.data = self.best_mean_rank_relation_embeddings
+
+                print('________________________', file=output_log_file)
+                print('EARLY STOP at epoch: {}'.format(epoch), file=output_log_file)
+                print('Best Mean Rank Score: {}'.format(self.best_mean_rank_score), file=output_log_file)
+                print('---- @ epoch: {}'.format(self.best_mean_rank_epoch), file=output_log_file)
+                print('________________________', file=output_log_file)
+
+                break
 
         save_figure(hyper_param_path, 'meanRank_raw.png', 'MeanRank (raw) on Training vs. Validation Dataset',
                     'Training Epochs', 'Mean Rank', training_mean_ranks, validation_mean_ranks, output_losses,
-                    self.validation_freq)
+                    self.num_of_epochs, self.validation_freq)
 
         save_figure(hyper_param_path, 'hits10_raw.png', 'Hits@10 (raw) on Training vs. Validation Dataset',
-                    'Training Epochs', 'Hits@10', training_hits, validation_hits, output_losses, self.validation_freq)
+                    'Training Epochs', 'Hits@10', training_hits, validation_hits, output_losses, self.num_of_epochs,
+                    self.validation_freq)
 
         save_figure(hyper_param_path, 'training_loss.png', 'Loss curve during Training',
-                    'Training Epochs', 'Training Loss', training_losses, [], [], self.validation_freq)
+                    'Training Epochs', 'Training Loss', training_losses, [], [], self.num_of_epochs,
+                    self.validation_freq)
 
         raw_validation_mean_rank, raw_validation_hits = self.get_evaluation_scores(self.knowledge_graph.valid_dataset,
                                                                                    filtered=False, fast_testing=False)
@@ -126,6 +160,7 @@ class Experiment:
             self.knowledge_graph.test_dataset, [self.knowledge_graph.train_dataset, self.knowledge_graph.valid_dataset],
             filtered=True, fast_testing=False)
 
+        print('-----------', file=output_log_file)
         print('Test Scores', file=output_log_file)
         print('-----------', file=output_log_file)
         print(' Validation Dataset:', file=output_log_file)
@@ -141,7 +176,7 @@ class Experiment:
                                                                         filtered_test_mean_rank), file=output_log_file)
         output_log_file.close()
         hyper_param_config = [hyper_param_path.name, self.num_of_epochs, self.batch_size, self.margin, self.norm,
-                              self.learning_rate, self.num_of_dimensions]
+                              self.learning_rate, self.num_of_dimensions, self.num_of_epochs]
         update_hyper_param_sheet(hyper_param_path.parent, 'hyper_param_mapping.xlsx', hyper_param_config)
 
         evaluation_scores = [hyper_param_path.name, raw_validation_mean_rank, filtered_validation_mean_rank,
@@ -149,13 +184,13 @@ class Experiment:
                              filtered_test_mean_rank, raw_test_hits, filtered_test_hits]
         update_hyper_param_sheet(hyper_param_path.parent, 'hyper_param_scores.xlsx', evaluation_scores)
 
-        self.save_model_params(hyper_param_path.name)
+        self.save_model_params(hyper_param_path)
 
     @torch.no_grad()
     def get_evaluation_scores(self, link_prediction_dataset: Datasubset, filter_datasets: List[Datasubset] = [],
                               filtered=False, fast_testing=True) -> (float, int):
         mean_rank = 0
-        hits10_list = []
+        hits10 = 0
         link_prediction_triples = link_prediction_dataset.triples
         datasets = filter_datasets + [link_prediction_dataset]
 
@@ -167,22 +202,27 @@ class Experiment:
 
         for triple in tqdm(link_prediction_triples[:threshold]):
             head_id, relation_id, tail_id = triple[0], triple[1], triple[2]
-            mean_rank += self.get_filtered_triple_mean_rank(head_id, relation_id, tail_id, datasets, hits10_list) \
-                if filtered else self.get_raw_triple_mean_rank(head_id, relation_id, tail_id, hits10_list)
+            triple_mean_rank = self.get_filtered_triple_mean_rank(head_id, relation_id, tail_id, datasets) \
+                if filtered else self.get_raw_triple_mean_rank(head_id, relation_id, tail_id)
 
-        return round(mean_rank / (threshold + 1), 4), len(hits10_list)
+            if triple_mean_rank <= 10:
+                hits10 += 1
 
-    def get_raw_triple_mean_rank(self, head_id: int, relation_id: int, tail_id: int, hits10_list: List) -> float:
-        rank_head, rank_tail = self.get_raw_triple_ranks(head_id, relation_id, tail_id, hits10_list)
+            mean_rank += triple_mean_rank
+
+        return round(mean_rank / (threshold + 1), 4), hits10
+
+    def get_raw_triple_mean_rank(self, head_id: int, relation_id: int, tail_id: int) -> float:
+        rank_head, rank_tail = self.get_raw_triple_ranks(head_id, relation_id, tail_id)
 
         return (rank_head + rank_tail) / 2
 
-    def get_raw_triple_ranks(self, head_id: int, relation_id: int, tail_id: int, hits10_list: List) -> (int, int):
-        head_embeddings = self.transe.entity_embeddings(torch.tensor(head_id)).repeat(
+    def get_raw_triple_ranks(self, head_id: int, relation_id: int, tail_id: int) -> (int, int):
+        head_embeddings = self.transe.entity_embeddings(torch.tensor(head_id).to(self.device)).repeat(
             self.knowledge_graph.num_of_entities, 1)
-        relation_embeddings = self.transe.relation_embeddings(torch.tensor(relation_id)).repeat(
+        relation_embeddings = self.transe.relation_embeddings(torch.tensor(relation_id).to(self.device)).repeat(
             self.knowledge_graph.num_of_entities, 1)
-        tail_embeddings = self.transe.entity_embeddings(torch.tensor(tail_id)).repeat(
+        tail_embeddings = self.transe.entity_embeddings(torch.tensor(tail_id).to(self.device)).repeat(
             self.knowledge_graph.num_of_entities, 1)
 
         head_loss = (self.transe.entity_embeddings.weight.data + relation_embeddings - tail_embeddings).norm(
@@ -193,37 +233,28 @@ class Experiment:
         rank_head = (head_loss.sort()[1] == head_id).nonzero().item() + 1
         rank_tail = (tail_loss.sort()[1] == tail_id).nonzero().item() + 1
 
-        if rank_head < 11:
-            hits10_list.append(rank_head)
-        if rank_tail < 11:
-            hits10_list.append(rank_tail)
-
         return rank_head, rank_tail
 
     def get_filtered_triple_mean_rank(self, head_id: int, relation_id: int, tail_id: int,
-                                      datasets: List[Datasubset], hits10_list: List) -> float:
+                                      datasets: List[Datasubset]) -> float:
         rank_head, rank_tail = self.get_filtered_ranks(head_id, relation_id, tail_id, datasets)
-        if rank_head < 11:
-            hits10_list.append(rank_head)
-
-        if rank_tail < 11:
-            hits10_list.append(rank_tail)
 
         return (rank_head + rank_tail) / 2
 
-    def get_filtered_ranks(self, head_id: int, relation_id: int, tail_id: int, datasets: List[Datasubset]) -> (
-            int, int):
+    def get_filtered_ranks(self, head_id: int, relation_id: int, tail_id: int, datasets: List[Datasubset]) -> (int, int):
         head_list = [entity for entity in range(self.knowledge_graph.num_of_entities)]
         tail2head_lookups = [dataset.tail2head_lookup for dataset in datasets]
         head_filter = self.get_filter(tail_id, relation_id, tail2head_lookups)
 
         head_list = list(set(head_list) - set(head_filter))
         head_list = list(set(head_list) - {head_id}) + [head_id]
-        head_list_embeddings = self.transe.entity_embeddings(torch.tensor(head_list))
+        head_list_embeddings = self.transe.entity_embeddings(torch.tensor(head_list).to(self.device))
 
         head_loss = (head_list_embeddings
-                     + self.transe.relation_embeddings(torch.tensor(relation_id)).repeat(len(head_list), 1)
-                     - self.transe.entity_embeddings(torch.tensor(tail_id)).repeat(len(head_list), 1)).norm(p=self.norm,
+                     + self.transe.relation_embeddings(torch.tensor(relation_id).to(self.device)).repeat(len(head_list),
+                                                                                                         1)
+                     - self.transe.entity_embeddings(torch.tensor(tail_id).to(self.device)).repeat(len(head_list),
+                                                                                                   1)).norm(p=self.norm,
                                                                                                             dim=1)
         tail_list = [entity for entity in range(self.knowledge_graph.num_of_entities)]
         head2tail_lookups = [dataset.head2tail_lookup for dataset in datasets]
@@ -231,10 +262,11 @@ class Experiment:
 
         tail_list = list(set(tail_list) - set(tail_filter))
         tail_list = list(set(tail_list) - {tail_id}) + [tail_id]
-        tail_list_embeddings = self.transe.entity_embeddings(torch.tensor(tail_list))
+        tail_list_embeddings = self.transe.entity_embeddings(torch.tensor(tail_list).to(self.device))
 
-        tail_loss = (self.transe.entity_embeddings(torch.tensor(head_id)).repeat(len(tail_list), 1)
-                     + self.transe.relation_embeddings(torch.tensor(relation_id)).repeat(len(tail_list), 1)
+        tail_loss = (self.transe.entity_embeddings(torch.tensor(head_id).to(self.device)).repeat(len(tail_list), 1)
+                     + self.transe.relation_embeddings(torch.tensor(relation_id)
+                                                       .to(self.device)).repeat(len(tail_list), 1)
                      - tail_list_embeddings).norm(p=self.norm, dim=1)
 
         rank_head = (head_loss.sort()[1] == len(head_list) - 1).nonzero().item() + 1
@@ -252,10 +284,11 @@ class Experiment:
 
         return entities_filter
 
-    def save_model_params(self, hyper_param_id):
-        file_path = self.knowledge_graph.data_dir / 'evaluation' / hyper_param_id / str('trained_parameters.pickle')
+    def save_model_params(self, hyper_param_path):
+        file_path = hyper_param_path / 'trained_parameters.pickle'
         torch.save(self.transe.state_dict(), file_path)
 
     def load_model_params(self, hyper_param_id):
-        file_path = self.knowledge_graph.data_dir / 'evaluation' / hyper_param_id / str('trained_parameters.pickle')
+        file_path = self.knowledge_graph.data_dir / 'evaluation_earlyStop' / hyper_param_id / str(
+            'trained_parameters.pickle')
         self.transe.load_state_dict(torch.load(file_path))
