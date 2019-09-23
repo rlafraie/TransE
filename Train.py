@@ -126,12 +126,11 @@ class Experiment:
                     self.early_stop_threshold -= 1
 
             if self.early_stop_threshold == 0:
-                self.num_of_epochs = self.best_mean_rank_epoch
                 self.transe.entity_embeddings.weight.data = self.best_mean_rank_entity_embeddings
                 self.transe.relation_embeddings.weight.data = self.best_mean_rank_relation_embeddings
-
+                self.num_of_epochs = epoch + 1
                 print('________________________', file=output_log_file)
-                print('EARLY STOP at epoch: {}'.format(epoch+1), file=output_log_file)
+                print('EARLY STOP at epoch: {}'.format(self.num_of_epochs), file=output_log_file)
                 print('Best Mean Rank Score: {}'.format(self.best_mean_rank_score), file=output_log_file)
                 print('---- @ epoch: {}'.format(self.best_mean_rank_epoch), file=output_log_file)
                 print('________________________', file=output_log_file)
@@ -178,7 +177,7 @@ class Experiment:
                                                                         filtered_test_mean_rank), file=output_log_file)
         output_log_file.close()
         hyper_param_config = [hyper_param_path.name, self.num_of_epochs, self.batch_size, self.margin, self.norm,
-                              self.learning_rate, self.num_of_dimensions, self.num_of_epochs]
+                              self.learning_rate, self.num_of_dimensions, self.best_mean_rank_epoch]
         update_hyper_param_sheet(hyper_param_path.parent, 'hyper_param_mapping.xlsx', hyper_param_config)
 
         evaluation_scores = [hyper_param_path.name, raw_validation_mean_rank, filtered_validation_mean_rank,
