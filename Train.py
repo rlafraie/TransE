@@ -22,7 +22,7 @@ class Experiment:
         self.margin = margin
         self.norm = norm
         self.learning_rate = learning_rate
-        self.early_stop_threshold = 5
+        self.early_stop_threshold = 10
 
         self.num_of_dimensions = num_of_dimensions
         self.num_of_entities = knowledge_graph.num_of_entities
@@ -120,6 +120,8 @@ class Experiment:
                     self.best_mean_rank_score = validation_mean_rank
                     self.best_mean_rank_entity_embeddings = self.transe.entity_embeddings.weight.data.clone()
                     self.best_mean_rank_relation_embeddings = self.transe.relation_embeddings.weight.data.clone()
+                    self.early_stop_threshold = 10
+                    
                 else:
                     self.early_stop_threshold -= 1
 
@@ -129,7 +131,7 @@ class Experiment:
                 self.transe.relation_embeddings.weight.data = self.best_mean_rank_relation_embeddings
 
                 print('________________________', file=output_log_file)
-                print('EARLY STOP at epoch: {}'.format(epoch), file=output_log_file)
+                print('EARLY STOP at epoch: {}'.format(epoch+1), file=output_log_file)
                 print('Best Mean Rank Score: {}'.format(self.best_mean_rank_score), file=output_log_file)
                 print('---- @ epoch: {}'.format(self.best_mean_rank_epoch), file=output_log_file)
                 print('________________________', file=output_log_file)
