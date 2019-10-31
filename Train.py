@@ -42,20 +42,22 @@ class Experiment:
 
     def train(self, filtered_corrupted_batch=False):
         hyper_param_path = initialize_log_folder(self.knowledge_graph.data_dir)
-        output_log_file = open(hyper_param_path / 'log.txt', 'w')
+        self.save_model_params(hyper_param_path)
+        hyperparam_config_log = open(hyper_param_path / 'hyperparam_config.txt', 'w')
 
-        print('Running expirement with hyperparameter id [{}]:'.format(hyper_param_path.name), file=output_log_file)
-        print('  Batch size:', self.batch_size, file=output_log_file)
-        print('  Number of Epochs:', self.num_of_epochs, file=output_log_file)
-        print('  Margin:', self.margin, file=output_log_file)
-        print('  Norm: L{}'.format(self.norm), file=output_log_file)
-        print('  Learning Rate:', self.learning_rate, file=output_log_file)
-        print('  Number of Dimensions:', self.num_of_dimensions, file=output_log_file)
-        print(' ', file=output_log_file)
-        print(' ', file=output_log_file)
+        print('Experiment with hyper parameter id [{}]:'.format(hyper_param_path.name), file=hyperparam_config_log)
+        print('--------------------------------------------------------', file=hyperparam_config_log)
+        print('  Batch size:', self.batch_size, file=hyperparam_config_log)
+        print('  Number of Epochs:', self.num_of_epochs, file=hyperparam_config_log)
+        print('  Margin:', self.margin, file=hyperparam_config_log)
+        print('  Norm: L{}'.format(self.norm), file=hyperparam_config_log)
+        print('  Learning Rate:', self.learning_rate, file=hyperparam_config_log)
+        print('  Number of Dimensions:', self.num_of_dimensions, file=hyperparam_config_log)
+
+        hyperparam_config_log.close()
+        training_log = open(hyper_param_path / 'training_log.txt', 'w')
 
         training_losses = []
-
         output_losses = []
         training_mean_ranks = []
         training_hits = []
@@ -102,18 +104,18 @@ class Experiment:
                 training_mean_ranks.append(training_mean_rank)
                 training_hits.append(training_hits10)
 
-                print('Validation for epoch', epoch + 1, file=output_log_file)
-                print('     Epoch loss: :      ', round(epoch_loss, 4), file=output_log_file)
+                print('Validation for epoch', epoch + 1, file=training_log)
+                print('     Epoch loss: :      ', round(epoch_loss, 4), file=training_log)
                 print('     Train Dataset:      hits@10(raw)= {} mean_rank(raw)= {}'
-                      .format(training_hits10, training_mean_rank), file=output_log_file)
+                      .format(training_hits10, training_mean_rank), file=training_log)
 
                 validation_mean_rank, validation_hits10 = self.get_evaluation_scores(self.knowledge_graph.valid_dataset)
                 validation_mean_ranks.append(validation_mean_rank)
                 validation_hits.append(validation_hits10)
 
                 print('     Validation Dataset: hits@10= {} mean_rank= {}'
-                      .format(validation_hits10, validation_mean_rank), file=output_log_file)
-                print('--------------------------------', file=output_log_file)
+                      .format(validation_hits10, validation_mean_rank), file=training_log)
+                print('--------------------------------', file=training_log)
 
                 if validation_mean_rank < self.best_mean_rank_score:
                     self.best_mean_rank_epoch = epoch + 1
@@ -128,13 +130,16 @@ class Experiment:
                 self.transe.entity_embeddings.weight.data = self.best_mean_rank_entity_embeddings
                 self.transe.relation_embeddings.weight.data = self.best_mean_rank_relation_embeddings
 
-                print('________________________', file=output_log_file)
-                print('EARLY STOP at epoch: {}'.format(epoch), file=output_log_file)
-                print('Best Mean Rank Score: {}'.format(self.best_mean_rank_score), file=output_log_file)
-                print('---- @ epoch: {}'.format(self.best_mean_rank_epoch), file=output_log_file)
-                print('________________________', file=output_log_file)
+                print('________________________', file=training_log)
+                print('EARLY STOP at epoch: {}'.format(epoch), file=training_log)
+                print('Best Mean Rank Score: {}'.format(self.best_mean_rank_score), file=training_log)
+                print('---- @ epoch: {}'.format(self.best_mean_rank_epoch), file=training_log)
+                print('________________________', file=training_log)
 
                 break
+
+            (hyper_param_path / 'trained_parameters.pickle').unlink()
+            self.save_model_params(hyper_param_path)
 
         save_figure(hyper_param_path, 'meanRank_raw.png', 'MeanRank (raw) on Training vs. Validation Dataset',
                     'Training Epochs', 'Mean Rank', training_mean_ranks, validation_mean_ranks, output_losses,
@@ -160,21 +165,21 @@ class Experiment:
             self.knowledge_graph.test_dataset, [self.knowledge_graph.train_dataset, self.knowledge_graph.valid_dataset],
             filtered=True, fast_testing=False)
 
-        print('-----------', file=output_log_file)
-        print('Test Scores', file=output_log_file)
-        print('-----------', file=output_log_file)
-        print(' Validation Dataset:', file=output_log_file)
+        print('-----------', file=training_log)
+        print('Test Scores', file=training_log)
+        print('-----------', file=training_log)
+        print(' Validation Dataset:', file=training_log)
         print('     hits@10(raw)={} mean_rank(raw)={}'.format(raw_validation_hits, raw_validation_mean_rank),
-              file=output_log_file)
+              file=training_log)
         print('     hits@10(filtered)={} mean_rank(filtered)={}'.format(filtered_validation_hits,
                                                                         filtered_validation_mean_rank),
-              file=output_log_file)
-        print('-------------------------------------------------------', file=output_log_file)
-        print(' Test Dataset:', file=output_log_file)
-        print('     hits@10(raw)={} mean_rank(raw)={}'.format(raw_test_hits, raw_test_mean_rank), file=output_log_file)
+              file=training_log)
+        print('-------------------------------------------------------', file=training_log)
+        print(' Test Dataset:', file=training_log)
+        print('     hits@10(raw)={} mean_rank(raw)={}'.format(raw_test_hits, raw_test_mean_rank), file=training_log)
         print('     hits@10(filtered)={} mean_rank(filtered)={}'.format(filtered_test_hits,
-                                                                        filtered_test_mean_rank), file=output_log_file)
-        output_log_file.close()
+                                                                        filtered_test_mean_rank), file=training_log)
+        training_log.close()
         hyper_param_config = [hyper_param_path.name, self.num_of_epochs, self.batch_size, self.margin, self.norm,
                               self.learning_rate, self.num_of_dimensions, self.num_of_epochs]
         update_hyper_param_sheet(hyper_param_path.parent, 'hyper_param_mapping.xlsx', hyper_param_config)
@@ -184,6 +189,7 @@ class Experiment:
                              filtered_test_mean_rank, raw_test_hits, filtered_test_hits]
         update_hyper_param_sheet(hyper_param_path.parent, 'hyper_param_scores.xlsx', evaluation_scores)
 
+        (hyper_param_path / 'trained_parameters.pickle').unlink()
         self.save_model_params(hyper_param_path)
 
     @torch.no_grad()
@@ -241,7 +247,8 @@ class Experiment:
 
         return (rank_head + rank_tail) / 2
 
-    def get_filtered_ranks(self, head_id: int, relation_id: int, tail_id: int, datasets: List[Datasubset]) -> (int, int):
+    def get_filtered_ranks(self, head_id: int, relation_id: int, tail_id: int, datasets: List[Datasubset]) -> (
+            int, int):
         head_list = [entity for entity in range(self.knowledge_graph.num_of_entities)]
         tail2head_lookups = [dataset.tail2head_lookup for dataset in datasets]
         head_filter = self.get_filter(tail_id, relation_id, tail2head_lookups)
