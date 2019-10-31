@@ -22,7 +22,7 @@ class Experiment:
         self.margin = margin
         self.norm = norm
         self.learning_rate = learning_rate
-        self.early_stop_threshold = 5
+        self.early_stop_threshold = 10
 
         self.num_of_dimensions = num_of_dimensions
         self.num_of_entities = knowledge_graph.num_of_entities
@@ -122,6 +122,8 @@ class Experiment:
                     self.best_mean_rank_score = validation_mean_rank
                     self.best_mean_rank_entity_embeddings = self.transe.entity_embeddings.weight.data.clone()
                     self.best_mean_rank_relation_embeddings = self.transe.relation_embeddings.weight.data.clone()
+                    self.early_stop_threshold = 10
+                    
                 else:
                     self.early_stop_threshold -= 1
 
@@ -181,7 +183,7 @@ class Experiment:
                                                                         filtered_test_mean_rank), file=training_log)
         training_log.close()
         hyper_param_config = [hyper_param_path.name, self.num_of_epochs, self.batch_size, self.margin, self.norm,
-                              self.learning_rate, self.num_of_dimensions, self.num_of_epochs]
+                              self.learning_rate, self.num_of_dimensions, self.best_mean_rank_epoch]
         update_hyper_param_sheet(hyper_param_path.parent, 'hyper_param_mapping.xlsx', hyper_param_config)
 
         evaluation_scores = [hyper_param_path.name, raw_validation_mean_rank, filtered_validation_mean_rank,
